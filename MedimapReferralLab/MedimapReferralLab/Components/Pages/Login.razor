@@ -1,0 +1,31 @@
+@page "/login"
+@attribute [AllowAnonymous]
+
+<PageTitle>ログイン</PageTitle>
+
+<h1>ログイン</h1>
+<p class="text-muted">逆紹介検索の試作です。社内の限られた人だけが使えます。</p>
+
+@if (Failed == 1)
+{
+    <div class="alert alert-danger">利用者名かパスワードが違います。</div>
+}
+
+<form method="post" action="account/login" style="max-width: 24rem">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+    <div class="mb-3">
+        <label class="form-label" for="userName">利用者名</label>
+        <input class="form-control" id="userName" name="userName" autocomplete="username" required />
+    </div>
+    <div class="mb-3">
+        <label class="form-label" for="password">パスワード</label>
+        <input class="form-control" id="password" name="password" type="password" autocomplete="current-password" required />
+    </div>
+    <button class="btn btn-primary" type="submit">ログイン</button>
+</form>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+    [SupplyParameterFromQuery] public int? Failed { get; set; }
+}

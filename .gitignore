@@ -422,3 +422,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# 回帰テストの出力（架空の症例の実測。必要なものは MedimapAgent の設計資料に書き戻す）
+results/

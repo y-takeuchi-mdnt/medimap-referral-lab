@@ -1,0 +1,289 @@
+@page "/lab/ai"
+@rendermode InteractiveServer
+@using System.Text.Encodings.Web
+@using System.Text.Json
+@using System.Text.Unicode
+@inject ReferralDraftService DraftService
+@inject CityCatalog Cities
+@inject AzureOpenAiOptions AiOptions
+@inject ReferralSearchOptions SearchOptions
+@inject PromptBuilder Prompts
+@inject IReadOnlyList<FictionalCase> Cases
+
+<PageTitle>AI呼び出しの試験</PageTitle>
+
+<h1>AI呼び出しの試験</h1>
+<p class="text-muted small">
+    手順1（12_テスト版の仕様.md）。自由文から条件を作り、所要時間・トークン数・検証の結果を見る。
+    入力も結果も保存しない。静的プロンプト @Prompts.StaticPrompt.Length.ToString("N0")字（hash <code>@Prompts.StaticPromptHash</code>）。
+</p>
+
+@if (!DraftService.AiAvailable)
+{
+    <div class="alert alert-warning">
+        AIは使えません（@(SearchOptions.AiEnabled ? "Azure OpenAI の接続設定が無い" : "ReferralSearch:AiEnabled=false")）。
+        「条件を作る」を押すと、手動検索へ落ちたときのふるまいになります。
+    </div>
+}
+@if (!AiOptions.SendTemperature)
+{
+    <div class="alert alert-warning">temperature を送っていません（SendTemperature=false）。同じ症例で同じ条件が出る保証がありません。</div>
+}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        @if (Cases.Count > 0)
+        {
+            <div class="mb-3">
+                <label class="form-label">架空の症例から入れる</label>
+                <select class="form-select" @onchange="LoadCase">
+                    <option value="">（選ぶ）</option>
+                    @foreach (var c in Cases)
+                    {
+                        <option value="@c.Id">@c.Id @c.Title</option>
+                    }
+                </select>
+            </div>
+        }
+
+        <div class="row g-2 mb-3">
+            <div class="col-5">
+                <label class="form-label">都道府県</label>
+                <select class="form-select" value="@prefectureCode" @onchange="OnPrefectureChanged">
+                    @foreach (var p in Cities.Prefectures)
+                    {
+                        <option value="@p.Code">@p.Name</option>
+                    }
+                </select>
+            </div>
+            <div class="col-7">
+                <label class="form-label">市区町村</label>
+                <select class="form-select" @bind="cityCode">
+                    @foreach (var c in Cities.Cities.Where(c => c.PrefectureCode == prefectureCode))
+                    {
+                        <option value="@c.Code">@c.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col">
+                <label class="form-label">年齢帯</label>
+                <select class="form-select" @bind="ageBand">
+                    @foreach (var a in AgeBands.All) { <option value="@a">@a</option> }
+                </select>
+            </div>
+            <div class="col">
+                <label class="form-label">性別</label>
+                <select class="form-select" @bind="sex">
+                    @foreach (var s in Sexes.All) { <option value="@s">@s</option> }
+                </select>
+            </div>
+            <div class="col">
+                <label class="form-label">医科／歯科</label>
+                <select class="form-select" @bind="facilityScope">
+                    @foreach (var f in FacilityScopes.All) { <option value="@f">@f</option> }
+                </select>
+            </div>
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label">症状・状態・ケアの必要</label>
+            <textarea class="form-control" rows="7" @bind="freeText" @bind:event="oninput"></textarea>
+            <div class="form-text">個人が特定できる情報（氏名・生年月日・患者ID・電話番号など）は入力しないでください。</div>
+        </div>
+
+        <button class="btn btn-primary" disabled="@running" @onclick="RunAsync">
+            @(running ? "作成中…" : "条件を作る")
+        </button>
+    </div>
+
+    <div class="col-lg-7">
+        @if (result is { } r)
+        {
+            @if (r.Guard.IsBlocked)
+            {
+                <div class="alert alert-danger">
+                    <strong>個人情報の可能性があるため送りませんでした。書き直してください。</strong>
+                    <ul class="mb-0">
+                        @foreach (var f in r.Guard.Blocks) { <li>@f.Kind: <code>@f.Matched</code></li> }
+                    </ul>
+                </div>
+            }
+            @if (r.Guard.Warnings.Any())
+            {
+                <div class="alert alert-warning">
+                    氏名が含まれていないか確かめてください:
+                    @foreach (var f in r.Guard.Warnings) { <code class="me-2">@f.Matched</code> }
+                </div>
+            }
+            @if (r.Status == DraftStatus.FallbackToManual)
+            {
+                <div class="alert alert-secondary"><strong>手動検索へ:</strong> @r.FallbackMessage</div>
+            }
+
+            @if (r.Call is { } call)
+            {
+                <table class="table table-sm w-auto">
+                    <tbody>
+                        <tr><th>所要時間</th><td class="@(r.OverBudget ? "text-danger fw-bold" : "")">@call.ElapsedMs.ToString("N0") ms @(r.OverBudget ? $"（予算 {AiOptions.BudgetSeconds}秒を超過）" : "")</td></tr>
+                        <tr><th>入力トークン</th><td>@call.PromptTokens?.ToString("N0")（キャッシュ @(call.CachedTokens?.ToString("N0") ?? "不明")）</td></tr>
+                        <tr><th>出力トークン</th><td>@call.CompletionTokens?.ToString("N0")</td></tr>
+                        <tr><th>呼び出し</th><td>@call.Status @(call.HttpStatus) @call.FinishReason <span class="text-danger">@call.Error</span></td></tr>
+                        <tr><th>モデル</th><td>@call.Model / @call.SystemFingerprint</td></tr>
+                    </tbody>
+                </table>
+            }
+
+            var d = r.Draft;
+            <h5>構造化プロフィール</h5>
+            <dl class="row small">
+                <dt class="col-3">セレクタ</dt><dd class="col-9">@(Cities.Find(d.Profile.CityCode)?.FullName) / @d.Profile.AgeBand / @d.Profile.Sex / @d.Profile.FacilityScope</dd>
+                <dt class="col-3">疾患・病態</dt><dd class="col-9">@string.Join("、", d.Profile.Conditions)</dd>
+                <dt class="col-3">ケア</dt><dd class="col-9">@string.Join("、", d.Profile.CareNeeds)</dd>
+                <dt class="col-3">生活</dt><dd class="col-9">@string.Join("、", d.Profile.Context)</dd>
+            </dl>
+
+            <h5>診療科の候補 <small class="text-muted">どれか1つ（OR）</small></h5>
+            <ConditionList Items="d.Departments" />
+
+            <h5>必須条件 <small class="text-muted">全部（AND）・順＝優先度</small></h5>
+            <ConditionList Items="d.Required" ShowReason="true" />
+
+            <h5>加点条件 <small class="text-muted">順＝優先度</small></h5>
+            <ConditionList Items="d.Bonus" ShowReason="true" />
+
+            @if (d.Unmatched.Count > 0)
+            {
+                <h5>これは検索条件にできませんでした</h5>
+                <ul>@foreach (var u in d.Unmatched) { <li>@u</li> }</ul>
+            }
+
+            @if (d.Issues.Count > 0)
+            {
+                <h5>検証で落ちた・動かしたもの</h5>
+                <table class="table table-sm small">
+                    <thead><tr><th>段階</th><th>枠</th><th>ID</th><th>扱い</th><th>内容</th></tr></thead>
+                    <tbody>
+                        @foreach (var i in d.Issues)
+                        {
+                            <tr><td>@i.Stage</td><td>@i.FromList</td><td>@i.KeyId</td><td>@i.Action</td><td>@i.Message</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <details class="mb-2">
+                <summary>AIが返したJSON</summary>
+                <pre class="small bg-light p-2">@PrettyJson(r.Call?.Content)</pre>
+            </details>
+            <details class="mb-2">
+                <summary>検証後の下書き（JSON）</summary>
+                <pre class="small bg-light p-2">@JsonSerializer.Serialize(DraftForDisplay(d), JsonOptions)</pre>
+            </details>
+        }
+    </div>
+</div>
+
+@if (history.Count > 0)
+{
+    <h4 class="mt-4">このページで流した結果</h4>
+    <p class="text-muted small">同じ症例を2回流すと、同じ条件が出たかが分かる。ページを離れると消える。自由文は持たない。</p>
+    <table class="table table-sm small">
+        <thead><tr><th>#</th><th>症例</th><th>状態</th><th>ms</th><th>入力</th><th>キャッシュ</th><th>出力</th><th>条件（順序込み）</th><th>前回と</th></tr></thead>
+        <tbody>
+            @foreach (var h in history.AsEnumerable().Reverse())
+            {
+                <tr>
+                    <td>@h.No</td><td>@h.CaseId</td><td>@h.Status</td><td>@h.ElapsedMs?.ToString("N0")</td>
+                    <td>@h.PromptTokens</td><td>@h.CachedTokens</td><td>@h.CompletionTokens</td>
+                    <td><code>@h.Signature</code></td><td>@h.SameAsPrevious</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private string prefectureCode = "13";
+    private string cityCode = "13101";
+    private string ageBand = "70代";
+    private string sex = "男";
+    private string facilityScope = FacilityScopes.Medical;
+    private string freeText = "";
+    private string? selectedCaseId;
+
+    private bool running;
+    private DraftResult? result;
+    private readonly List<HistoryRow> history = [];
+
+    private sealed record HistoryRow(int No, string CaseId, DraftStatus Status, double? ElapsedMs, int? PromptTokens, int? CachedTokens, int? CompletionTokens, string Signature, string SameAsPrevious);
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
+    };
+
+    private void OnPrefectureChanged(ChangeEventArgs e)
+    {
+        prefectureCode = e.Value?.ToString() ?? "";
+        cityCode = Cities.Cities.FirstOrDefault(c => c.PrefectureCode == prefectureCode)?.Code ?? "";
+    }
+
+    private void LoadCase(ChangeEventArgs e)
+    {
+        var c = Cases.FirstOrDefault(x => x.Id == e.Value?.ToString());
+        if (c is null) return;
+        selectedCaseId = c.Id;
+        cityCode = c.CityCode;
+        prefectureCode = Cities.Find(c.CityCode)?.PrefectureCode ?? prefectureCode;
+        ageBand = c.AgeBand;
+        sex = c.Sex;
+        facilityScope = c.FacilityScope;
+        freeText = c.FreeText;
+    }
+
+    private async Task RunAsync()
+    {
+        running = true;
+        try
+        {
+            var request = new ReferralRequest
+            {
+                CityCode = cityCode, AgeBand = ageBand, Sex = sex, FacilityScope = facilityScope, FreeText = freeText,
+            };
+            result = await DraftService.CreateDraftAsync(request);
+
+            // 架空の症例を入れたまま流したときだけ症例IDを付ける。書き換えたら「手入力」
+            var caseId = Cases.FirstOrDefault(c => c.Id == selectedCaseId) is { } fc && fc.FreeText == freeText ? fc.Id : "手入力";
+            var signature = result.Draft.ConditionSignature;
+            var previous = history.LastOrDefault(h => h.CaseId == caseId && caseId != "手入力");
+            history.Add(new HistoryRow(history.Count + 1, caseId, result.Status, result.Call?.ElapsedMs,
+                result.Call?.PromptTokens, result.Call?.CachedTokens, result.Call?.CompletionTokens, signature,
+                previous is null ? "" : previous.Signature == signature ? "同じ" : "違う"));
+        }
+        finally
+        {
+            running = false;
+        }
+    }
+
+    private static object DraftForDisplay(ReferralDraft d) => new
+    {
+        profile = d.Profile,
+        departments = d.Departments.Select(c => new { key = c.KeyId, label = c.Label, note = c.Note }),
+        required = d.Required.Select(c => new { key = c.KeyId, label = c.Label, reason = c.Reason }),
+        bonus = d.Bonus.Select(c => new { key = c.KeyId, label = c.Label, reason = c.Reason, note = c.Note }),
+        unmatched = d.Unmatched,
+        issues = d.Issues.Select(i => new { i.Stage, i.FromList, i.KeyId, action = i.Action.ToString(), i.Message }),
+    };
+
+    private static string PrettyJson(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return "（なし）";
+        try { return JsonSerializer.Serialize(JsonDocument.Parse(json).RootElement, JsonOptions); }
+        catch (JsonException) { return json; }
+    }
+}

@@ -1,3 +1,5 @@
 <Solution>
+  <Project Path="MedimapReferralLab.Core/MedimapReferralLab.Core.csproj" />
+  <Project Path="MedimapReferralLab.Tests/MedimapReferralLab.Tests.csproj" />
   <Project Path="MedimapReferralLab/MedimapReferralLab.csproj" />
 </Solution>

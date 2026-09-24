@@ -1,6 +1,6 @@
-﻿<div class="top-row ps-3 navbar navbar-dark">
+<div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="">MedimapReferralLab</a>
+        <a class="navbar-brand" href="">逆紹介検索 試作</a>
     </div>
 </div>
 
@@ -10,21 +10,27 @@
     <nav class="nav flex-column">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
-                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
+                <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> ホーム
             </NavLink>
         </div>
 
         <div class="nav-item px-3">
-            <NavLink class="nav-link" href="counter">
-                <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> Counter
+            <NavLink class="nav-link" href="lab/ai">
+                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> AI呼び出しの試験
             </NavLink>
         </div>
 
-        <div class="nav-item px-3">
-            <NavLink class="nav-link" href="weather">
-                <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Weather
-            </NavLink>
-        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <form method="post" action="account/logout">
+                        <AntiforgeryToken />
+                        <button type="submit" class="nav-link btn btn-link text-start">
+                            <span class="bi bi-plus-square-fill-nav-menu" aria-hidden="true"></span> ログアウト（@context.User.Identity?.Name）
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
     </nav>
 </div>
-

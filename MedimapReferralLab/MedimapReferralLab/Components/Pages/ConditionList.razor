@@ -1,0 +1,25 @@
+@* 条件の一覧。④の確認画面（手順3）で外す・足すを付ける前の、表示だけの版 *@
+
+@if (Items.Count == 0)
+{
+    <p class="text-muted small">なし</p>
+}
+else
+{
+    <ol class="small">
+        @foreach (var c in Items)
+        {
+            <li>
+                <code>@c.KeyId</code> @c.Label
+                <span class="text-muted">[@c.Key.Source]</span>
+                @if (ShowReason && c.Reason is not null) { <span>— @c.Reason</span> }
+                @if (c.Note is not null) { <span class="badge text-bg-warning ms-1">@c.Note</span> }
+            </li>
+        }
+    </ol>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<DraftCondition> Items { get; set; } = [];
+    [Parameter] public bool ShowReason { get; set; }
+}
