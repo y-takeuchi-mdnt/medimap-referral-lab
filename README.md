@@ -41,6 +41,7 @@ MedimapReferralLab/
 | 設定 | |
 |---|---|
 | `ReferralSearch:AiEnabled` | `true` で Azure OpenAI に送る。**既定は `false`**（外部送信を止めるスイッチ。設計/08 9章） |
+| `ReferralSearch:LogPrompts` | `true` で、試験ページから送ったプロンプト（可変部分＝自由文を含む）をログに出す。**既定は `false`。**自由文は保存しない約束なので、架空の症例で確かめるときだけ一時的に使う。送ったプロンプトは、この設定によらず試験ページの「送ったプロンプト」で見られる（保存しない） |
 | `AzureOpenAI:Endpoint` / `ApiKey` / `Deployment` / `ApiVersion` | デプロイの情報 |
 | `AzureOpenAI:DeploymentType` | デプロイの種類（`Standard` / `DataZoneStandard` / `GlobalStandard`）。記録と表示のためだけ。`GlobalStandard` なら結果に「参考値」と出る |
 | `AzureOpenAI:TimeoutSeconds` | 打ち切る時間。試作では実測したいので既定10秒。予算（`BudgetSeconds` 既定4秒）を超えたら印を付ける |

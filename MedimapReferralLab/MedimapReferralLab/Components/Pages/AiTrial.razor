@@ -9,6 +9,7 @@
 @inject ReferralSearchOptions SearchOptions
 @inject PromptBuilder Prompts
 @inject IReadOnlyList<FictionalCase> Cases
+@inject ILogger<AiTrial> Logger
 
 <PageTitle>AI呼び出しの試験</PageTitle>
 
@@ -181,6 +182,17 @@
                 </table>
             }
 
+            @if (sentUserMessage is not null)
+            {
+                <details class="mb-2">
+                    <summary>送ったプロンプト（可変部分・user）</summary>
+                    <pre class="small bg-light p-2" style="white-space: pre-wrap">@sentUserMessage</pre>
+                </details>
+                <details class="mb-2">
+                    <summary>送ったプロンプト（静的部分・system。@Prompts.StaticPrompt.Length.ToString("N0")字・hash @Prompts.StaticPromptHash）</summary>
+                    <pre class="small bg-light p-2" style="white-space: pre-wrap; max-height: 40rem; overflow: auto">@Prompts.StaticPrompt</pre>
+                </details>
+            }
             <details class="mb-2">
                 <summary>AIが返したJSON</summary>
                 <pre class="small bg-light p-2">@PrettyJson(r.Call?.Content)</pre>
@@ -223,6 +235,7 @@
 
     private bool running;
     private DraftResult? result;
+    private string? sentUserMessage;
     private readonly List<HistoryRow> history = [];
 
     private sealed record HistoryRow(int No, string CaseId, DraftStatus Status, double? ElapsedMs, int? PromptTokens, int? CachedTokens, int? CompletionTokens, string Signature, string SameAsPrevious);
@@ -262,6 +275,15 @@
                 CityCode = cityCode, AgeBand = ageBand, Sex = sex, FacilityScope = facilityScope, FreeText = freeText,
             };
             result = await DraftService.CreateDraftAsync(request);
+
+            // 実際に Azure OpenAI に送ったときだけ（ガードで止めた・AIを止めている・歯科のときは送っていない）
+            sentUserMessage = result.Call is null ? null : Prompts.BuildUserMessage(request);
+            if (sentUserMessage is not null && SearchOptions.LogPrompts)
+            {
+                Logger.LogInformation(
+                    "送ったプロンプト（第{Version}版・静的部分 hash {Hash}・{StaticChars}字は省略）\n{UserMessage}",
+                    PromptBuilder.Version, Prompts.StaticPromptHash, Prompts.StaticPrompt.Length, sentUserMessage);
+            }
 
             // 架空の症例を入れたまま流したときだけ症例IDを付ける。書き換えたら「手入力」
             var caseId = Cases.FirstOrDefault(c => c.Id == selectedCaseId) is { } fc && fc.FreeText == freeText ? fc.Id : "手入力";

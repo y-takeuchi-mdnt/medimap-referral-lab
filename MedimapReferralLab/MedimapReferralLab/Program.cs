@@ -58,6 +58,11 @@ builder.Services.AddSingleton<IReadOnlyList<FictionalCase>>(_ =>
 
 var app = builder.Build();
 
+if (searchOptions.LogPrompts)
+{
+    app.Logger.LogWarning("ReferralSearch:LogPrompts=true。送ったプロンプト（自由文を含む）をログに出します。架空の症例だけで使い、確かめ終わったら false に戻してください。");
+}
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {

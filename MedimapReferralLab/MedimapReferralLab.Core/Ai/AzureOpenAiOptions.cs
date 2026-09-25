@@ -70,4 +70,10 @@ public sealed class ReferralSearchOptions
 
     /// <summary>カタログCSVのあるディレクトリ。</summary>
     public string CatalogDirectory { get; set; } = "data/catalog";
+
+    /// <summary>
+    /// true なら、試験ページで Azure OpenAI に送ったプロンプト（可変部分＝自由文を含む）をログに出す。<b>既定は false。</b>
+    /// 自由文は保存しない（12_テスト版の仕様.md 5章「省かないもの」）ので、架空の症例で確かめるときだけ一時的に使う。
+    /// </summary>
+    public bool LogPrompts { get; set; }
 }
