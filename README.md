@@ -42,6 +42,7 @@ MedimapReferralLab/
 |---|---|
 | `ReferralSearch:AiEnabled` | `true` で Azure OpenAI に送る。**既定は `false`**（外部送信を止めるスイッチ。設計/08 9章） |
 | `AzureOpenAI:Endpoint` / `ApiKey` / `Deployment` / `ApiVersion` | デプロイの情報 |
+| `AzureOpenAI:DeploymentType` | デプロイの種類（`Standard` / `DataZoneStandard` / `GlobalStandard`）。記録と表示のためだけ。`GlobalStandard` なら結果に「参考値」と出る |
 | `AzureOpenAI:TimeoutSeconds` | 打ち切る時間。試作では実測したいので既定10秒。予算（`BudgetSeconds` 既定4秒）を超えたら印を付ける |
 | `AzureOpenAI:UseMaxCompletionTokens` | `max_tokens` を受け付けないモデル（o系・GPT-5系など）なら `true` |
 | `AzureOpenAI:SendTemperature` | `temperature` を受け付けないモデルなら `false`（**再現性が保証されなくなる**ので画面に警告が出る） |
@@ -66,7 +67,11 @@ cd MedimapReferralLab
 dotnet run --project MedimapReferralLab.Tests                       # オフラインの検査（Azure OpenAI 不要）
 dotnet run --project MedimapReferralLab.Tests -- live               # 架空の症例 26件 × 2回を流して測る
 dotnet run --project MedimapReferralLab.Tests -- live --cases K01,K02 --runs 3
+dotnet run --project MedimapReferralLab.Tests -- live --interval 15       # 呼び出しの間を15秒空ける
 ```
+
+`--interval` は、1分あたりのトークン数の枠でレート制限（429）に当たらないようにするため。
+1回の入力が約4.5万トークンなので、枠が 200,000 なら1分に4回まで。`--interval 15` で52回を約15分で流せる。
 
 `live` は `MedimapReferralLab/appsettings.Development.json` と環境変数の設定を使い、
 `results/<日時>/` に次を出す（`results/` はコミットしない）。
@@ -91,4 +96,5 @@ dotnet run --project MedimapReferralLab.Tests -- live --cases K01,K02 --runs 3
 | AI呼び出しは SDK ではなく REST | usage（キャッシュに当たったトークン数）と `system_fingerprint` をそのまま記録するため。NuGet 依存も増やさない |
 | 静的プロンプトは system、可変部分は user | 静的部分はカタログ読み込み時に1回だけ作り、ハッシュを画面とログに出す（変わるとキャッシュが効かない） |
 | 画面は Radzen ではなく Bootstrap | 手順1は試験ページだけなので。手順3の④と一覧で Radzen を入れる |
+| 手順1の実測はグローバル標準（2026-09-25） | Visual Studio サブスクリプション（MSDN）には Japan East の標準・データ ゾーン標準の枠が無いため。**架空の症例だけ・法務に一言確認したうえで使う。**時間とキャッシュは参考値で、本実装（Japan East・標準）で測り直す |
 | ログインは設定ファイルの利用者 | 試作は AgentDB を使わないため。本実装では Agent の管理者ログインに載せる |

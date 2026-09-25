@@ -24,11 +24,14 @@ internal static class LiveRegression
     public static async Task<int> RunAsync(string root, string[] args)
     {
         var runs = 2;
+        var interval = TimeSpan.Zero;
         string[]? only = null;
         for (var i = 0; i < args.Length; i++)
         {
             if (args[i] == "--runs" && i + 1 < args.Length) runs = int.Parse(args[++i], CultureInfo.InvariantCulture);
             else if (args[i] == "--cases" && i + 1 < args.Length) only = args[++i].Split(',', StringSplitOptions.TrimEntries);
+            // 1分あたりのトークン数の枠でレート制限（429）に当たらないように、呼び出しの間を空ける（秒）
+            else if (args[i] == "--interval" && i + 1 < args.Length) interval = TimeSpan.FromSeconds(double.Parse(args[++i], CultureInfo.InvariantCulture));
         }
 
         var webDir = Path.Combine(root, "MedimapReferralLab");
@@ -63,7 +66,7 @@ internal static class LiveRegression
 
         var outDir = Path.Combine(root, "results", DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture));
         Directory.CreateDirectory(Path.Combine(outDir, "raw"));
-        Console.WriteLine($"{cases.Count}件 × {runs}回 / デプロイ {aiOptions.Deployment} / 静的プロンプト {prompts.StaticPrompt.Length:N0}字 hash {prompts.StaticPromptHash}");
+        Console.WriteLine($"{cases.Count}件 × {runs}回 / デプロイ {aiOptions.Deployment}（{DeploymentTypeLabel(aiOptions)}） / 間隔 {interval.TotalSeconds}秒 / 静的プロンプト {prompts.StaticPrompt.Length:N0}字 hash {prompts.StaticPromptHash}");
         Console.WriteLine($"出力先 {outDir}\n");
 
         var results = new List<(FictionalCase Case, int Run, DraftResult Result)>();
@@ -71,6 +74,7 @@ internal static class LiveRegression
         {
             foreach (var c in cases)
             {
+                if (results.Count > 0 && interval > TimeSpan.Zero) await Task.Delay(interval);
                 var r = await service.CreateDraftAsync(c.ToRequest());
                 results.Add((c, run, r));
                 var call = r.Call;
@@ -86,6 +90,9 @@ internal static class LiveRegression
         Console.WriteLine("\n" + summary);
         return 0;
     }
+
+    private static string DeploymentTypeLabel(AzureOpenAiOptions o) =>
+        string.IsNullOrWhiteSpace(o.DeploymentType) ? "種類の記載なし" : o.DeploymentType;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -147,9 +154,11 @@ internal static class LiveRegression
         var sb = new StringBuilder();
         sb.AppendLine($"# 手順1 実測 {DateTime.Now:yyyy-MM-dd HH:mm}");
         sb.AppendLine();
-        sb.AppendLine($"- デプロイ: {options.Deployment} / API {options.ApiVersion} / モデル: {string.Join(", ", calls.Select(c => c.Call.Model).Distinct())}");
+        sb.AppendLine($"- デプロイ: {options.Deployment}（{DeploymentTypeLabel(options)}） / API {options.ApiVersion} / モデル: {string.Join(", ", calls.Select(c => c.Call.Model).Distinct())}");
         sb.AppendLine($"- fingerprint: {string.Join(", ", calls.Select(c => c.Call.SystemFingerprint).Distinct())}");
         sb.AppendLine($"- 静的プロンプト: {prompts.StaticPrompt.Length:N0}字（hash {prompts.StaticPromptHash}）");
+        if (options.IsGlobalDeployment)
+            sb.AppendLine("- **グローバル標準で測った値。**処理の場所とレート制限が本実装（Japan East・標準）と違うので、時間とキャッシュは参考値");
         sb.AppendLine($"- 症例 {results.Select(r => r.Case.Id).Distinct().Count()}件 × {runs}回、呼び出し {calls.Count}回");
         sb.AppendLine();
         sb.AppendLine("## 呼び出し時間");

@@ -14,6 +14,14 @@ public sealed class AzureOpenAiOptions
     /// <summary>デプロイ名。モデルのバージョンはデプロイ側で固定する（08 8章）。</summary>
     public string Deployment { get; set; } = "";
 
+    /// <summary>
+    /// デプロイの種類（Standard / DataZoneStandard / GlobalStandard）。呼び出しには使わず、記録と表示のためだけに持つ。
+    /// GlobalStandard は国外で処理されうるので、架空の症例だけ・法務の確認済みで使う。時間の実測は参考値になる。
+    /// </summary>
+    public string DeploymentType { get; set; } = "";
+
+    public bool IsGlobalDeployment => DeploymentType.Contains("Global", StringComparison.OrdinalIgnoreCase);
+
     public string ApiVersion { get; set; } = "2024-10-21";
 
     /// <summary>

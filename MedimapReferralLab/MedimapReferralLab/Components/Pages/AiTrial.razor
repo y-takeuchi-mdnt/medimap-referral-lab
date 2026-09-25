@@ -25,6 +25,13 @@
         「条件を作る」を押すと、手動検索へ落ちたときのふるまいになります。
     </div>
 }
+@if (DraftService.AiAvailable && AiOptions.IsGlobalDeployment)
+{
+    <div class="alert alert-info small">
+        グローバル標準のデプロイです（国外で処理されることがあります）。<strong>架空の症例だけを入力してください。</strong>
+        所要時間は参考値です（本実装は Japan East・標準）。
+    </div>
+}
 @if (!AiOptions.SendTemperature)
 {
     <div class="alert alert-warning">temperature を送っていません（SendTemperature=false）。同じ症例で同じ条件が出る保証がありません。</div>
@@ -131,7 +138,7 @@
                         <tr><th>入力トークン</th><td>@call.PromptTokens?.ToString("N0")（キャッシュ @(call.CachedTokens?.ToString("N0") ?? "不明")）</td></tr>
                         <tr><th>出力トークン</th><td>@call.CompletionTokens?.ToString("N0")</td></tr>
                         <tr><th>呼び出し</th><td>@call.Status @(call.HttpStatus) @call.FinishReason <span class="text-danger">@call.Error</span></td></tr>
-                        <tr><th>モデル</th><td>@call.Model / @call.SystemFingerprint</td></tr>
+                        <tr><th>モデル</th><td>@call.Model / @call.SystemFingerprint / @(string.IsNullOrWhiteSpace(AiOptions.DeploymentType) ? "種類の記載なし" : AiOptions.DeploymentType)</td></tr>
                     </tbody>
                 </table>
             }
