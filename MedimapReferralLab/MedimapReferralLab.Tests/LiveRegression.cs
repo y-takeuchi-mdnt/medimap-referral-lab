@@ -70,12 +70,23 @@ internal static class LiveRegression
         Console.WriteLine($"出力先 {outDir}\n");
 
         var results = new List<(FictionalCase Case, int Run, DraftResult Result)>();
+        var rateLimitRetries = 0;
         for (var run = 1; run <= runs; run++)
         {
             foreach (var c in cases)
             {
                 if (results.Count > 0 && interval > TimeSpan.Zero) await Task.Delay(interval);
+                // 回帰テストだけは、レート制限（429）に当たったら待って同じ症例を呼び直す。
+                // 本番（ReferralDraftService）は設計どおり再試行しない。ここは測るための再試行
                 var r = await service.CreateDraftAsync(c.ToRequest());
+                for (var retry = 1; retry <= MaxRateLimitRetries && r.Call?.Status == AiCallStatus.RateLimited; retry++)
+                {
+                    var wait = TimeSpan.FromSeconds(Math.Max(r.Call.RetryAfterSeconds ?? 0, MinRetryWaitSeconds));
+                    Console.WriteLine($"         {c.Id} レート制限。{wait.TotalSeconds:F0}秒待って呼び直す（{retry}/{MaxRateLimitRetries}）");
+                    rateLimitRetries++;
+                    await Task.Delay(wait);
+                    r = await service.CreateDraftAsync(c.ToRequest());
+                }
                 results.Add((c, run, r));
                 var call = r.Call;
                 Console.WriteLine($"{run}回目 {c.Id} {r.Status,-16} {call?.ElapsedMs,7:F0}ms in {call?.PromptTokens} (cache {call?.CachedTokens}) out {call?.CompletionTokens}  {r.Draft.ConditionSignature}");
@@ -85,11 +96,15 @@ internal static class LiveRegression
 
         await WriteCallsCsv(Path.Combine(outDir, "calls.csv"), results);
         await WriteReviewCsv(Path.Combine(outDir, "review.csv"), results, catalog);
-        var summary = BuildSummary(results, aiOptions, prompts, runs);
+        var summary = BuildSummary(results, aiOptions, prompts, runs)
+            + $"\n## レート制限\n- 429 で待って呼び直した回数: {rateLimitRetries}回（間隔 {interval.TotalSeconds}秒）\n";
         await File.WriteAllTextAsync(Path.Combine(outDir, "summary.md"), summary);
         Console.WriteLine("\n" + summary);
         return 0;
     }
+
+    private const int MaxRateLimitRetries = 5;
+    private static readonly double MinRetryWaitSeconds = double.TryParse(Environment.GetEnvironmentVariable("LAB_MIN_RETRY_WAIT"), out var w) ? w : 20;
 
     private static string DeploymentTypeLabel(AzureOpenAiOptions o) =>
         string.IsNullOrWhiteSpace(o.DeploymentType) ? "種類の記載なし" : o.DeploymentType;

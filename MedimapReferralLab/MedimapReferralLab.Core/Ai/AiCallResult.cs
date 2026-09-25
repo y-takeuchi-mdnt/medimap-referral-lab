@@ -36,6 +36,9 @@ public sealed record AiCallResult
     public string? Content { get; init; }
 
     public int? HttpStatus { get; init; }
+
+    /// <summary>429 のときに Azure が返した「何秒待てばよいか」（retry-after）。</summary>
+    public double? RetryAfterSeconds { get; init; }
     public string? Error { get; init; }
 
     public bool CacheHit => CachedTokens > 0;

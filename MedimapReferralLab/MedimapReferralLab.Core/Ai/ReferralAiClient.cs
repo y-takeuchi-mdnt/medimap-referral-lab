@@ -48,6 +48,7 @@ public sealed class ReferralAiClient(HttpClient http, AzureOpenAiOptions options
                     Status = response.StatusCode == HttpStatusCode.TooManyRequests ? AiCallStatus.RateLimited : AiCallStatus.ServiceError,
                     ElapsedMs = sw.Elapsed.TotalMilliseconds,
                     HttpStatus = (int)response.StatusCode,
+                    RetryAfterSeconds = GetRetryAfterSeconds(response),
                     Error = Truncate(body, 500),
                 };
             }
@@ -146,6 +147,15 @@ public sealed class ReferralAiClient(HttpClient http, AzureOpenAiOptions options
                 Error = $"応答を読めない: {ex.Message}",
             };
         }
+    }
+
+    private static double? GetRetryAfterSeconds(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("retry-after-ms", out var ms)
+            && double.TryParse(ms.FirstOrDefault(), System.Globalization.CultureInfo.InvariantCulture, out var msValue))
+            return msValue / 1000;
+        if (response.Headers.RetryAfter?.Delta is { } delta) return delta.TotalSeconds;
+        return null;
     }
 
     private static string Truncate(string s, int max) => s.Length <= max ? s : s[..max] + "…";
