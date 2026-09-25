@@ -171,7 +171,7 @@ internal static class LiveRegression
         sb.AppendLine();
         sb.AppendLine($"- デプロイ: {options.Deployment}（{DeploymentTypeLabel(options)}） / API {options.ApiVersion} / モデル: {string.Join(", ", calls.Select(c => c.Call.Model).Distinct())}");
         sb.AppendLine($"- fingerprint: {string.Join(", ", calls.Select(c => c.Call.SystemFingerprint).Distinct())}");
-        sb.AppendLine($"- 静的プロンプト: {prompts.StaticPrompt.Length:N0}字（hash {prompts.StaticPromptHash}）");
+        sb.AppendLine($"- プロンプト: 第{PromptBuilder.Version}版 / 静的部分 {prompts.StaticPrompt.Length:N0}字（hash {prompts.StaticPromptHash}）");
         if (options.IsGlobalDeployment)
             sb.AppendLine("- **グローバル標準で測った値。**処理の場所とレート制限が本実装（Japan East・標準）と違うので、時間とキャッシュは参考値");
         sb.AppendLine($"- 症例 {results.Select(r => r.Case.Id).Distinct().Count()}件 × {runs}回、呼び出し {calls.Count}回");
@@ -199,8 +199,33 @@ internal static class LiveRegression
         {
             var byCase = results.GroupBy(r => r.Case.Id).ToList();
             var same = byCase.Count(g => g.Select(x => x.Result.Draft.ConditionSignature).Distinct().Count() == 1);
-            sb.AppendLine("## 再現性（同じ症例で同じ条件が出たか。順序込み）");
-            sb.AppendLine($"- 同じ: {same}/{byCase.Count}件");
+            // 検索結果に効くのは主に診療科（OR）と必須（AND）。加点は点数だけ。枠ごとに分けて数える
+            static string Keys(IEnumerable<DraftCondition> items) => string.Join(",", items.Select(c => c.KeyId).Order(StringComparer.Ordinal));
+            int SameBy(Func<ReferralDraft, string> key) =>
+                byCase.Count(g => g.Select(x => key(x.Result.Draft)).Distinct().Count() == 1);
+            static double Jaccard(IReadOnlyList<DraftCondition> a, IReadOnlyList<DraftCondition> b)
+            {
+                var sa = a.Select(c => c.KeyId).ToHashSet();
+                var sb2 = b.Select(c => c.KeyId).ToHashSet();
+                var union = sa.Union(sb2).Count();
+                return union == 0 ? 1 : (double)sa.Intersect(sb2).Count() / union;
+            }
+            var bonusOverlap = byCase
+                .Select(g => g.OrderBy(x => x.Run).Select(x => x.Result.Draft).ToList())
+                .Where(d => d.Count >= 2)
+                .Select(d => Jaccard(d[0].Bonus, d[1].Bonus))
+                .DefaultIfEmpty(1)
+                .Average();
+
+            sb.AppendLine("## 再現性（同じ症例で同じ条件が出たか）");
+            sb.AppendLine("| | 同じだった症例 |");
+            sb.AppendLine("|---|---|");
+            sb.AppendLine($"| 診療科の候補（順序を問わず） | {SameBy(d => Keys(d.Departments))}/{byCase.Count} |");
+            sb.AppendLine($"| 必須条件（順序を問わず） | {SameBy(d => Keys(d.Required))}/{byCase.Count} |");
+            sb.AppendLine($"| 診療科と必須の両方 | {SameBy(d => Keys(d.Departments) + "|" + Keys(d.Required))}/{byCase.Count} |");
+            sb.AppendLine($"| 加点条件（順序を問わず） | {SameBy(d => Keys(d.Bonus))}/{byCase.Count}（1回目と2回目の重なり 平均 {bonusOverlap * 100:F0}%） |");
+            sb.AppendLine($"| 全部（順序込み） | {same}/{byCase.Count} |");
+            sb.AppendLine();
             foreach (var g in byCase.Where(g => g.Select(x => x.Result.Draft.ConditionSignature).Distinct().Count() > 1))
             {
                 sb.AppendLine($"- {g.Key} が違う:");

@@ -63,6 +63,11 @@ public sealed class ReferralDraftService(
         if (!client.Options.IsConfigured)
             return Fallback("Azure OpenAI の接続設定がありません。条件を手で組んでください。");
 
+        // 歯科のカタログは未整備（歯科のキーは検索対象=0。設計/04 6章）。
+        // AIを呼ぶと医科のキーで条件を作ってしまい、歯科を探しているのに医科の条件で絞ることになる
+        if (request.FacilityScope == FacilityScopes.Dental)
+            return Fallback("歯科の検索キーはまだ整備していないため、AIで条件を作れません。条件を手で組んでください。");
+
         if (guard.IsBlocked)
         {
             return new DraftResult

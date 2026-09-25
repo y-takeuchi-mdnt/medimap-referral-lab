@@ -15,7 +15,7 @@
 <h1>AI呼び出しの試験</h1>
 <p class="text-muted small">
     手順1（12_テスト版の仕様.md）。自由文から条件を作り、所要時間・トークン数・検証の結果を見る。
-    入力も結果も保存しない。静的プロンプト @Prompts.StaticPrompt.Length.ToString("N0")字（hash <code>@Prompts.StaticPromptHash</code>）。
+    入力も結果も保存しない。プロンプト 第@(PromptBuilder.Version)版・静的部分 @Prompts.StaticPrompt.Length.ToString("N0")字（hash <code>@Prompts.StaticPromptHash</code>）。
 </p>
 
 @if (!DraftService.AiAvailable)

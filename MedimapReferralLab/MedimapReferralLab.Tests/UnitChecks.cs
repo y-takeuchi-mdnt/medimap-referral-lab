@@ -62,15 +62,18 @@ internal static class UnitChecks
         check.Equal(ids.Count, ids.Distinct().Count(), "同じIDが2回出ない");
         check.That(!ids.Contains("M0001"), "検索対象外（M0001 歯科）は入らない");
 
-        var must = s.IndexOf("## 必須条件にも加点にも使える", StringComparison.Ordinal);
-        var bonusOnly = s.IndexOf("## 加点にのみ使える", StringComparison.Ordinal);
-        var common = s.IndexOf("# 4. 共通設問検索キー", StringComparison.Ordinal);
+        // 見出しの語は指示文にも出てくるので、行頭の見出しとして探す
+        var must = s.IndexOf("\n## 必須条件にも加点にも使える\n", StringComparison.Ordinal);
+        var bonusOnly = s.IndexOf("\n## 加点にのみ使える\n", StringComparison.Ordinal);
+        var common = s.IndexOf("\n# 4. 共通設問検索キー\n", StringComparison.Ordinal);
         check.That(must > 0 && bonusOnly > must && common > bonusOnly, "見出しの順: 必須可 → 加点のみ → 共通設問");
         var mustIds = Regex.Matches(s[must..bonusOnly], @"M\d{4}(?= )").Select(m => m.Value).Distinct().ToList();
         check.Equal(768, mustIds.Count, "「必須条件にも加点にも使える」は768件");
         check.That(mustIds.All(id => catalog.Find(id)!.RequirableAsMust), "そのブロックは全部 必須可=1");
         check.That(s.Contains("### 診療科目／診療科目"), "ソース／分類の見出し");
         check.That(s.Contains("副甲状腺疾患 ／ 甲状腺疾患"), "判定の注意（別概念の実例）");
+        check.That(s.Contains("まとめて選ばないでください") && s.Contains("M2259 在宅療養支援診療所"), "第2版の指示（加点を絞る・在宅の体制）");
+        check.That(catalog.Find("M2259") is { RequirableAsMust: true }, "例に出した M2259 は必須可");
         check.That(s.IndexOf("# 5. 判定の注意", StringComparison.Ordinal) > common, "判定の注意は最後");
 
         var again = new PromptBuilder(catalog, cities);
@@ -108,6 +111,7 @@ internal static class UnitChecks
         check.That(!profileProps.ContainsKey("cityCode") && !profileProps.ContainsKey("ageBand"), "市区町村・年齢帯はAIに出させない");
         check.That(!profileProps.ContainsKey("name") && !profileProps.ContainsKey("birthDate"), "氏名・生年月日のスロットが無い");
         check.Equal(6, props["required"]!["maxItems"]!.GetValue<int>(), "required maxItems 6");
+        check.Equal(10, props["bonus"]!["maxItems"]!.GetValue<int>(), "bonus maxItems 10（第2版）");
         check.That(props["required"]!["items"]!["properties"]!["reason"] is not null, "必須条件にだけ reason");
         check.That(props["bonus"]!["items"]!["properties"]!["reason"] is null, "加点には reason が無い");
 
@@ -260,6 +264,10 @@ internal static class UnitChecks
         var (s3, h3) = Make(good);
         var blocked = await s3.CreateDraftAsync(Request with { FreeText = "S22.3.5生 心不全" });
         check.That(blocked.Status == DraftStatus.BlockedByGuard && h3.Calls == 0, "ブロックしたら送らない");
+
+        var (s6, h6) = Make(good);
+        var dental = await s6.CreateDraftAsync(Request with { FacilityScope = FacilityScopes.Dental });
+        check.That(dental.Status == DraftStatus.FallbackToManual && h6.Calls == 0, "歯科はAIを呼ばず手動へ（歯科のカタログが未整備）");
 
         var (s4, _) = Make("""{"profile":{}}""");
         var broken = await s4.CreateDraftAsync(Request);
