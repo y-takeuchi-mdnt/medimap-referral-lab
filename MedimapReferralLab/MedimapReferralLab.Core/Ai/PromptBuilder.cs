@@ -25,7 +25,8 @@ public sealed class PromptBuilder
     public PromptBuilder(SearchKeyCatalog catalog, CityCatalog cities)
     {
         _cities = cities;
-        StaticPrompt = BuildStatic(catalog);
+        // 改行は OS によらず \n に揃える（Windows では AppendLine が \r\n になり、ハッシュが環境で変わるため）
+        StaticPrompt = BuildStatic(catalog).ReplaceLineEndings("\n");
         StaticPromptHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(StaticPrompt)))[..12].ToLowerInvariant();
     }
 
@@ -45,7 +46,7 @@ public sealed class PromptBuilder
         sb.AppendLine("<<<");
         sb.AppendLine(request.FreeText.Trim());
         sb.AppendLine(">>>");
-        return sb.ToString();
+        return sb.ToString().ReplaceLineEndings("\n");
     }
 
     private static string BuildStatic(SearchKeyCatalog catalog)
